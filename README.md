@@ -1,220 +1,170 @@
 # USDT Demand Pressure in Turkey: A Path-Dependence Test
 
-**Anne-Lise Saive, April 2026**
+*Anne-Lise Saive — April 2026*
 
-A self-initiated empirical project testing whether USDT/TRY demand pressure
-in Turkey responds to monetary shocks in a path-dependent way where earlier
-high-salience shocks amplify the response to later ones.
+## Overview
 
-TDLR; with public data, no. The premium series is dominated
-by short-horizon market mechanics rather than slow behavioral
-accumulation. The honest null is the primary finding. A weaker
-exploratory signal appears in first differences but does not survive as a
-clean test of the hypothesis. Wallet-level data is what would actually
-allow to test this hypothesis best.
+This is a self-initiated empirical project testing whether USDT demand pressure in Turkey responds to monetary shocks in a path-dependent way, where earlier high-salience shocks amplify the response to later ones.
 
-![Main result figure](figures/turkey_v9_results.png)
+The short answer is that, with public data, there is no robust evidence for this. The premium series appears to be dominated by short-horizon market dynamics rather than slower behavioral accumulation. A weaker signal shows up in first differences on one event window, but it does not hold as a general result. The null is the most reliable conclusion.
 
----
+![Main results: tuning, evaluation, and λ sensitivity](figures/main_results.png)
 
-## What this is testing
+## Motivation
 
-The hypothesis comes from computational models of salience-weighted
-episodic memory: high-intensity past events lower the threshold for
-future behavioral responses to related cues. In this context, if a country
-experiences a severe currency shock, accumulated "vulnerability" should
-amplify population-level demand for stablecoin protection during later
-shocks of comparable or smaller magnitude.
+The hypothesis comes from computational models of salience-weighted memory. In these models, high-intensity past events reduce the threshold for reacting to related future cues. Formally, behavior depends not only on current input $x_t$, but on an accumulated memory term:
 
-The cleanest place to test this empirically is Turkey 2018–2024, which
-has three well-separated shock events:
+$$
+\text{response}_t = f(x_t, M(t))
+$$
 
-- **Aug 2018**: US tariffs trigger a ~40% lira drop in days
-- **Dec 2021**: Erdoğan rate-cut episode, ~44% lira drop over months
-- **Jun 2023**: post-election devaluation, ~25–30% drop over six weeks
+where $M(t)$ summarizes prior exposure.
 
-These give one tuning event, one held-out evaluation event, and one
-robustness event with no refitting.
+Transposed to this setting, a severe currency shock could leave a trace that makes later shocks trigger stronger demand for stablecoin protection, even if they are smaller.
 
-## What I'm actually measuring (and what I'm not)
+Turkey provides a clean empirical setting, with three distinct and well-separated episodes:
 
-The dependent variable is the **USDT/TRY premium over the official
-USD/TRY rate** reflecting the spread Turkish buyers pay above market for 
-fast stablecoin access. The premium captures local demand pressure and
-urgency.
+- **August 2018** — tariff shock and rapid currency collapse
+- **December 2021** — rate-cut driven crisis
+- **June 2023** — post-election devaluation
 
-It is *not* adoption at the user-level concept (new wallets,
-retained users, transaction counts) and isn't observable in public
-market data. The premium is a downstream proxy for adoption-related
-demand, not a direct measurement of it.
+These allow a simple tuning, evaluation, and robustness sequence without overlap.
+
+## What is observed
+
+The dependent variable is the USDT/TRY premium:
+
+$$
+p_t = \log\left(\frac{\text{USDT/TRY}_{\text{Binance}}}{\text{USD/TRY}_{\text{official}}}\right)
+$$
+
+This premium reflects how much local buyers are willing to pay above FX parity to access stablecoins quickly. It captures demand pressure and urgency. It is influenced by adoption, but also by liquidity conditions, arbitrage frictions, and constraints on capital movement. It should therefore be treated as a noisy proxy rather than a direct measure of user-level adoption.
 
 ## Data
 
-All public, all reproducible without API keys.
+All inputs are public and reproducible:
 
-- **Binance** weekly USDT/TRY klines
-- **FRED** official weekly USD/TRY (series `DEXTHUS`)
-- **World Bank** Turkey annual CPI, used only to sanity-check the FX-based inflation proxy
-- **Google Trends** Turkey-localized search interest in `USDT`, `Tether`, and `dolar kripto`
+- Binance weekly USDT/TRY data
+- FRED USD/TRY exchange rate
+- World Bank CPI (used only for validation)
+- Google Trends search interest in Turkey
 
-A 12-week rolling FX change replaces forward-filled annual CPI as the
-inflation proxy because it moves at weekly frequency, which the modeling
-needs.
+Inflation is proxied using a rolling FX-based measure to match the weekly frequency of the data.
 
 ## Methodology
 
-The shape of the test:
+### Memory representation
 
-```
-Tune on Aug 2018  →  Evaluate OOS on Dec 2021  →  Robustness on Jun 2023
-```
+Past shocks are summarized through a salience-weighted memory kernel:
 
-The tuning and evaluation events never touch. Memory-kernel parameters
-(decay rate λ, salience weights) are fit on Aug 2018 and frozen before
-the Dec 2021 evaluation. Jun 2023 is a second held-out window with no
-refitting at all.
+$$
+M(t) = \sum_{i} \text{ESS}_i \cdot e^{-\lambda(t - t_i)}
+$$
 
-### The Emotional Salience Score
+Each event $i$ is assigned an Emotional Salience Score:
 
-Each shock event is scored on three axes:
+$$
+\text{ESS}_i = w_{\text{mag}} \cdot \text{Magnitude}_i + w_{\text{abr}} \cdot \text{Abruptness}_i + w_{\text{rel}} \cdot \text{Relevance}_i
+$$
 
-- **Magnitude** size of the FX move
-- **Abruptness** speed of the move
-- **Relevance** proxied by household exposure (search interest spike + FX volatility regime)
+The decay parameter $\lambda$ and weights $w$ are estimated on the August 2018 event and then held fixed.
 
-The three weights are jointly optimized with the memory decay λ on the
-Aug 2018 window using differential evolution. The resulting kernel
-`M(t) = Σ ESS_i · exp(-λ(t - t_i))` summarizes accumulated prior
-vulnerability at time `t`, excluding any contribution from the event
-currently being evaluated.
+### Model structure
 
-### Three nested models
+Three nested models are compared.
 
-**Model A — memoryless ARX baseline**
-```
-premium ~ AR(1) + FX_shock + FX_vol + CPI_proxy + Trends
-```
+**Model A — memoryless baseline**
 
-**Model B — salience-weighted path-dependence (the primary claim)**
-```
-A + M(t) + FX × M
-```
+$$
+p_t = \alpha + \phi p_{t-1} + \beta X_t + \epsilon_t
+$$
 
-**Model C — reactivation asymmetry (explicitly exploratory)**
-```
-B + Abruptness × M + Trends × M
-```
-Model C uses ridge regression with CV-selected alpha to handle the
-collinearity introduced by the interaction terms. A and B remain OLS.
+where $X_t$ includes FX shocks, volatility, inflation proxy, and search trends.
+
+**Model B — path-dependence**
+
+$$
+p_t = \alpha + \phi p_{t-1} + \beta X_t + \gamma M(t) + \delta (X_t \cdot M(t)) + \epsilon_t
+$$
+
+This tests whether accumulated prior exposure modifies current responses.
+
+**Model C — exploratory asymmetries**
+
+Extensions of Model B introducing interactions such as:
+
+$$
+\text{Trends}_t \cdot M(t), \quad \text{Abruptness}_t \cdot M(t), \quad \text{Similarity}_t \cdot M(t)
+$$
+
+These test whether reactivation depends on attention, thresholds, or similarity to past events.
 
 ### Validation design
 
-- **Tune/evaluate separation.** λ and weights frozen after Aug 2018.
-- **Event-centered out-of-sample windows.** Train on the 2 weeks pre-shock, test on 24 weeks post-shock.
-- **AR(1) terms.** For the differences specification, the AR term is a lag of `d_premium`, not the level — a common leakage trap.
-- **Trend-null comparator (Model A+trend).** Catches any spurious gain Model B might claim from a smooth time trend.
-- **Placebo tests on 50 random non-shock dates.** Reports both B−A and C−B OOS R² gains, giving percentile ranks for each novel claim.
-- **Bootstrap with replacement.** 500 resamples; duplicates preserved.
-- **Hard abort on synthetic data.** If Binance or FRED falls back to anything synthetic, the script terminates rather than silently mixing.
+The design enforces strict separation:
+
+- Parameters tuned on August 2018
+- Evaluated out-of-sample on December 2021
+- Tested again on June 2023 without refitting
+
+Additional safeguards include event-centered windows, AR(1) structure to avoid leakage, a trend-null comparator, placebo tests on random dates, and bootstrap resampling.
 
 ## Results
 
-### Levels and the honest null
+### Levels: a clear null result
 
-Predicting log(premium) levels OOS produces deeply negative R² across all
-three models, in both the Dec 2021 and Jun 2023 windows. None of the
-nested specifications meaningfully outperforms the AR(1) baseline.
+Out-of-sample performance in levels is strongly negative across all models in both evaluation windows. Model B does not outperform the baseline, and gains are indistinguishable from placebo variation.
 
-**Reading:** the premium series is non-stationary at the resolution of
-weekly public data. Levels-based forecasting fails for reasons that have
-nothing to do with whether path-dependence is real or not. It fails
-because the target itself is too noisy and too event-driven for the
-specification to be identified at this sample size and frequency.
+This indicates that $R^2_{\text{OOS}} \ll 0$ for all specifications. The premium series is not predictable at this resolution using these inputs. This reflects the volatility and instability of the target, rather than a failure of a specific model.
 
-### First differences show exploratory positive signal
+### First differences: limited signal
 
-Modeling week-to-week change in the premium rather than its level shifts
-the picture. Model C achieves positive OOS R² (+0.09) on the Jun 2023
-window, with the `Trends × M` interaction's bootstrap confidence interval
-excluding zero. The placebo distribution puts this gain in a high
-percentile of random-date controls.
+Modeling changes in the premium $\Delta p_t = p_t - p_{t-1}$ produces a small positive out-of-sample $R^2$ in one robustness window. An interaction between search trends and accumulated exposure appears in that specification. However, it does not appear consistently across events, it is not present in the primary specification, and it does not survive as a general result. This is best interpreted as a tentative indication, not evidence.
 
-**Reading:** there is a weak signal that search-interest spikes may
-predict premium changes more strongly when accumulated prior
-vulnerability is already elevated. But this is one event, in one country,
-on a robustness window, in a non-primary specification. It warrants
-follow-up; it does not confirm the hypothesis.
+### Memory timescale
 
-### What the fitted decay rate suggests
+The fitted decay parameter implies a very short effective memory. With $\lambda \approx 0.68$ on weekly data, the half-life is:
 
-The optimized memory kernel converges on **λ ≈ 0.68 per week**, a
-half-life of roughly two weeks. This is much faster than what a
-slow behavioral-accumulation interpretation of the hypothesis would
-predict.
+$$
+t_{1/2} = \frac{\ln(2)}{\lambda} \approx 1 \text{ week}
+$$
 
-**Reading:** if a path-dependence effect exists in the premium, it
-behaves like short-horizon market memory rather than population-level
-vulnerability accumulation. The hypothesis is about user-level
-adoption behavior, but the premium responds at a timescale dominated
-by market mechanics. This is consistent with the premium being a
-proxy *downstream* of adoption rather than a direct measurement of it.
+This is consistent with short-horizon market dynamics rather than slow behavioral accumulation. In practice, the memory kernel is capturing recent market conditions rather than long-lived exposure effects.
 
-## Limitations
+This sharpens the main conclusion. A behavioral path-dependence mechanism would predict longer persistence. What is observed instead is rapid decay, no out-of-sample gain over the memoryless baseline, and a placebo distribution indistinguishable from the real result. The fitted structure does not merely fail to support path-dependence — it actively contradicts the timescale that path-dependence would require.
 
-- **Four shock events in one country.** Identification of a salience-weighted memory effect requires more events and more cross-sectional variation than this design provides. With public data, that's the ceiling.
-- **The premium is not adoption.** It measures urgency and local demand pressure, both of which are influenced by adoption but also by liquidity, arbitrage frictions, and regulatory frictions that the model doesn't separate.
-- **Google Trends is a coarse attention proxy.** Search interest captures public attention but not the specific cohort that's actually moving USDT.
-- **No user-level cohort structure.** The hypothesis is fundamentally about how prior exposure changes individual decision-making thresholds. That cannot be tested in market-aggregated data.
-- **Single specification family.** A more flexible non-linear model (e.g., a regime-switching specification on volatility) might recover signal the linear models miss.
+## Interpretation
 
-## What would actually test this
+The absence of a robust signal does not imply that path-dependence does not exist. It indicates that it is not identifiable in this data.
 
-The hypothesis is about adoption being path-dependent at the level of
-individual user behavior. Public market data can only test a downstream
-proxy. The clean version of this test would need:
+The limitation is structural. The hypothesis concerns individual decision thresholds and behavioral adaptation over time. The observable variable is a market-level price proxy shaped by multiple layers of microstructure. Public data aggregates heterogeneous behavior into a single signal, which obscures the mechanism.
 
-- **Wallet-level activity data** new wallet creation, retention, transaction frequency
-- **Geographic resolution** separating Turkish, Argentine, Nigerian, and Lebanese cohorts
-- **More shock events** 15+ across multiple countries gives the design statistical power
-- **Cohort segmentation by prior exposure** testing whether users who lived through 2018 respond differently to 2021 than users who joined after
+## What would test the hypothesis properly
 
-This is precisely the data Tether has and public researchers don't.
-That's the asymmetry that makes this kind of question genuinely
-testable internally.
+A direct test would require wallet-level activity data, cohort segmentation, geographic resolution, and multiple countries and events. This would allow testing whether prior exposure changes adoption thresholds, timing, and persistence at the user level.
 
 ## Reproducing
 
 ```bash
 git clone https://github.com/annelisesaive/usdt-demand-pressure-turkey
 cd usdt-demand-pressure-turkey
-python -m venv venv && source venv/bin/activate
+
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+
 python analysis.py
 ```
 
-The script will fetch from Binance, FRED, World Bank, and Google Trends
-on first run. No API keys are needed for any of these sources. If any
-critical source returns synthetic-fallback data, the script will abort
-with an explicit error rather than silently mix sources.
-
-Outputs land in `figures/`:
-
-- `turkey_v9_results.png` main three-panel figure
-- `lambda_sensitivity.png` λ sensitivity sweep
-- `placebo_distribution.png` null distribution of B−A and C−B gains
+The script fetches all data sources automatically and produces the main figure in `figures/`.
 
 ## Files
 
-- `analysis.py` full pipeline (data fetch, feature engineering, three-model comparison, placebo, bootstrap)
-- `requirements.txt` pinned versions
-- `figures/` output plots
-- `LICENSE` MIT
+- `analysis.py` — full pipeline from data ingestion to model evaluation
+- `requirements.txt` — dependencies
+- `figures/` — output plots
 
 ## Citation
 
-If this is useful for your own work:
-
-```
-Saive, A.-L. (2026). USDT Demand Pressure in Turkey: A Path-Dependence
-Test. https://github.com/annelisesaive/usdt-demand-pressure-turkey
-```
+Saive, A.-L. (2026). *USDT Demand Pressure in Turkey: A Path-Dependence Test.*
+[github.com/annelisesaive/usdt-demand-pressure-turkey](https://github.com/annelisesaive/usdt-demand-pressure-turkey)

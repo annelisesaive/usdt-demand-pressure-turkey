@@ -1,0 +1,44 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Virtual environments ────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env
+
+# ── Jupyter ─────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── IDE / editor ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Project-specific ────────────────────────────────────────────────────────
+# Cached data fetches (regenerate from sources)
+data_cache/
+*.parquet
+*.feather
+
+# Local environment overrides
+.env.local
+secrets.json
+
+# Large generated outputs (keep only the canonical figure committed)
+figures/*.png
+!figures/main_results.png

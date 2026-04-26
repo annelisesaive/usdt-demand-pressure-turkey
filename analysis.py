@@ -34,7 +34,7 @@ Google    Trends TR: USDT, Tether, dolar kripto
 ==============================================================================
 """
 
-import time, warnings
+import time, warnings, os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -1261,6 +1261,7 @@ def make_figures(df, res_lev, shocks, lam, w_mag, w_abr, w_rel,
         f'Anne-Lise Saive',
         fontsize=11, fontweight='bold', y=0.997, linespacing=1.6
     )
+    os.makedirs(os.path.dirname(outpath) or ".", exist_ok=True)
     plt.savefig(outpath, dpi=180, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"\n✓  Figure → {outpath}")
@@ -1469,7 +1470,7 @@ if __name__ == '__main__':
                  lam_grid, lam_losses,
                  plac_BA, plac_C1B, plac_C2B, plac_C3B,
                  real_BA, real_C1B, real_C2B, real_C3B,
-                 outpath='turkey_results.png')
+                 outpath='figures/main_results.png')
 
     print_results(results, lam, w_mag, w_abr, w_rel, SHOCKS,
                   plac_BA, plac_C1B, plac_C2B, plac_C3B,
