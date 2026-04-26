@@ -8,6 +8,22 @@ This is a self-initiated empirical project testing whether USDT demand pressure 
 
 The short answer is that, with public data, there is no robust evidence for this. The premium series appears to be dominated by short-horizon market dynamics rather than slower behavioral accumulation. A weaker signal shows up in first differences on one event window, but it does not hold as a general result. The null is the most reliable conclusion.
 
+## Scope
+
+This is a preliminary, single-country exploration. Turkey was chosen as a strong
+first candidate: three well-separated monetary shocks (2018, 2021, 2023), the
+world's largest USDT/TRY trading pair on Binance, and full public data
+availability for both market prices and on-chain flows. The aim is to test
+whether a salience-weighted memory mechanism leaves an identifiable trace in
+the most data-rich emerging-market case before extending the design.
+
+A full test of the hypothesis would extend to a cross-country panel
+(e.g. ARS, NGN, VES, RUB), use mechanical event detection rather than a
+curated catalogue, and triangulate across multiple demand proxies including
+on-chain net flows, P2P offer prices, and exchange-specific premiums to
+isolate behavioral demand from microstructure noise. The on-chain supplement
+included here (see `onchain_supplement.py`) is a first step in that direction.
+
 ![Main results: tuning, evaluation, and λ sensitivity](figures/main_results.png)
 
 ## Motivation
@@ -40,6 +56,25 @@ $$
 
 This premium reflects how much local buyers are willing to pay above FX parity to access stablecoins quickly. It captures demand pressure and urgency. It is influenced by adoption, but also by liquidity conditions, arbitrage frictions, and constraints on capital movement. It should therefore be treated as a noisy proxy rather than a direct measure of user-level adoption.
 
+### What the premium does and does not capture
+
+The premium $p_t$ is a useful but imperfect proxy. It conflates at least three
+components:
+
+1. **Genuine demand pressure** for stablecoin protection, the variable of
+   interest.
+2. **Binance lira-rails friction** banking access, deposit/withdrawal limits,
+   KYC frictions, all of which varied substantially over 2018–2024.
+3. **The parallel-USD premium** accessible only via informal channels, which
+   during severe lira stress can exceed 2–6% even for cash USD.
+
+These cannot be cleanly separated using off-chain price data alone. The
+on-chain supplement (`onchain_supplement.py`) provides a complementary signal
+TRC-20 USDT net inflow to Turkey-domiciled CEX hot wallets that speaks more
+directly to (1), at the cost of capturing a different slice of the same
+population (CEX users, not P2P or self-custody flows). A robust test would
+triangulate across all three measures.
+
 ## Data
 
 All inputs are public and reproducible:
@@ -48,6 +83,7 @@ All inputs are public and reproducible:
 - yfinance USD/TRY exchange rate
 - World Bank CPI (used only for validation)
 - Google Trends search interest in Turkey
+- Dune TRC-20 USDT transfer data for the on-chain supplement
 
 Inflation is proxied using a rolling FX-based measure to match the weekly frequency of the data.
 
@@ -158,9 +194,18 @@ python analysis.py
 
 The script fetches all data sources automatically and produces the main figure in `figures/`.
 
+For the on-chain supplement, run `dune_query.sql` on Dune, export the result
+to `data/onchain_flows.csv`, then run:
+
+```bash
+python onchain_supplement.py
+```
+
 ## Files
 
 - `analysis.py`  full pipeline from data ingestion to model evaluation
+- `onchain_supplement.py` complementary on-chain analysis (TRC-20 USDT flows)
+- `dune_query.sql` Dune query for sourcing the on-chain flow CSV
 - `requirements.txt`  dependencies
 - `figures/`  output plots
 
