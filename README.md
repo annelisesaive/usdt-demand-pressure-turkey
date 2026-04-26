@@ -1,6 +1,6 @@
 # USDT Demand Pressure in Turkey: A Path-Dependence Test
 
-*Anne-Lise Saive — April 2026*
+*Anne-Lise Saive (April 2026)*
 
 ## Overview
 
@@ -24,9 +24,9 @@ Transposed to this setting, a severe currency shock could leave a trace that mak
 
 Turkey provides a clean empirical setting, with three distinct and well-separated episodes:
 
-- **August 2018** — tariff shock and rapid currency collapse
-- **December 2021** — rate-cut driven crisis
-- **June 2023** — post-election devaluation
+- **August 2018**  tariff shock and rapid currency collapse
+- **December 2021**  rate-cut driven crisis
+- **June 2023**  post-election devaluation
 
 These allow a simple tuning, evaluation, and robustness sequence without overlap.
 
@@ -73,7 +73,7 @@ The decay parameter $\lambda$ and weights $w$ are estimated on the August 2018 e
 
 Three nested models are compared.
 
-**Model A — memoryless baseline**
+**Model A  memoryless baseline**
 
 $$
 p_t = \alpha + \phi p_{t-1} + \beta X_t + \epsilon_t
@@ -81,7 +81,7 @@ $$
 
 where $X_t$ includes FX shocks, volatility, inflation proxy, and search trends.
 
-**Model B — path-dependence**
+**Model B  path-dependence**
 
 $$
 p_t = \alpha + \phi p_{t-1} + \beta X_t + \gamma M(t) + \delta (X_t \cdot M(t)) + \epsilon_t
@@ -89,7 +89,7 @@ $$
 
 This tests whether accumulated prior exposure modifies current responses.
 
-**Model C — exploratory asymmetries**
+**Model C  exploratory asymmetries**
 
 Extensions of Model B introducing interactions such as:
 
@@ -160,9 +160,9 @@ The script fetches all data sources automatically and produces the main figure i
 
 ## Files
 
-- `analysis.py` — full pipeline from data ingestion to model evaluation
-- `requirements.txt` — dependencies
-- `figures/` — output plots
+- `analysis.py`  full pipeline from data ingestion to model evaluation
+- `requirements.txt`  dependencies
+- `figures/`  output plots
 
 ## Citation
 
