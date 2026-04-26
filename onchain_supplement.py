@@ -39,7 +39,6 @@ C = dict(
 )
 
 SHOCKS = [
-    ('2018-08-13', 'Aug 2018', 'US tariff escalation'),
     ('2021-12-20', 'Dec 2021', 'Rate-cut crisis'),
     ('2023-06-15', 'Jun 2023', 'Post-election devaluation'),
 ]
@@ -51,7 +50,7 @@ DATA_PATH = 'data/onchain_flows.csv'
 
 def load_flows(path: str) -> pd.DataFrame:
     df = pd.read_csv(path, parse_dates=['week'])
-    required = {'week', 'net_flow_usdt'}
+    required = {'week', 'inflow_usdt', 'outflow_usdt', 'net_flow_usdt'}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"{path} missing required columns: {sorted(missing)}")
@@ -60,12 +59,20 @@ def load_flows(path: str) -> pd.DataFrame:
     df['week'] = df['week'].dt.tz_localize(None)
     df = df.set_index('week').sort_index()
     df['net_flow_usdt_m'] = df['net_flow_usdt'] / 1e6
+    if 'gross_flow_usdt' not in df.columns:
+        df['gross_flow_usdt'] = df['inflow_usdt'] + df['outflow_usdt']
+    if 'abs_net_share' not in df.columns:
+        denom = df['gross_flow_usdt'].replace(0, np.nan)
+        df['abs_net_share'] = df['net_flow_usdt'].abs() / denom
+    df['inflow_usdt_m'] = df['inflow_usdt'] / 1e6
+    df['outflow_usdt_m'] = df['outflow_usdt'] / 1e6
+    df['gross_flow_usdt_m'] = df['gross_flow_usdt'] / 1e6
     return df
 
 
 def plot_supplement(df: pd.DataFrame,
                     outpath: str = 'figures/onchain_supplement.png') -> None:
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.6), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
 
     for ax, (date_str, label, desc) in zip(axes, SHOCKS):
         shock = pd.Timestamp(date_str)
@@ -84,8 +91,8 @@ def plot_supplement(df: pd.DataFrame,
         flow = win['net_flow_usdt_m'].values
         rolling = pd.Series(flow).rolling(4, min_periods=1).mean().values
 
-        ax.bar(weeks_from_shock, flow, width=0.7, color=C['flow'],
-               alpha=0.55, edgecolor='none', label='Weekly net inflow')
+         ax.bar(weeks_from_shock, flow, width=0.7, color=C['flow'],
+             alpha=0.55, edgecolor='none', label='Weekly net flow')
         ax.plot(weeks_from_shock, rolling, color=C['rolling'],
                 lw=2, label='4-week rolling mean')
         ax.axvline(0, color=C['shock'], lw=1.6, alpha=0.85,
@@ -101,12 +108,19 @@ def plot_supplement(df: pd.DataFrame,
     axes[0].legend(loc='upper left', fontsize=8, framealpha=0.92,
                    frameon=True)
 
-    title = ('On-chain supplement: TRC-20 USDT net inflow to '
-             'Turkey-domiciled CEX wallets')
+    title = ('On-chain supplement: TRC-20 USDT flow involving '
+             'Turkey-domiciled CEX-attributed wallets')
     fig.suptitle(title, fontsize=11.5, fontweight='bold', y=1.02)
     fig.text(0.5, -0.04, 'Source: Dune | stablecoins_tron.transfers | cex.addresses',
              ha='center', fontsize=8, style='italic', color='#555')
-
+    fig.text(
+        0.5, -0.08,
+        'Coverage starts July 2019; August 2018 shock is not covered by the on-chain supplement. '
+        'Flows are exchange-address proxies, not user-level Turkish demand.',
+        ha='center',
+        fontsize=8,
+        color='#555'
+    )
     fig.tight_layout()
     os.makedirs(os.path.dirname(outpath) or '.', exist_ok=True)
     fig.savefig(outpath, dpi=150, bbox_inches='tight')
