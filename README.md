@@ -45,7 +45,7 @@ This premium reflects how much local buyers are willing to pay above FX parity t
 All inputs are public and reproducible:
 
 - Binance weekly USDT/TRY data
-- FRED USD/TRY exchange rate
+- yfinance USD/TRY exchange rate
 - World Bank CPI (used only for validation)
 - Google Trends search interest in Turkey
 
@@ -67,7 +67,7 @@ $$
 \text{ESS}_i = w_{\text{mag}} \cdot \text{Magnitude}_i + w_{\text{abr}} \cdot \text{Abruptness}_i + w_{\text{rel}} \cdot \text{Relevance}_i
 $$
 
-The decay parameter $\lambda$ and weights $w$ are estimated on the August 2018 event and then held fixed.
+The decay parameter $\lambda$ and weights $w$ are estimated on the August 2018 event and then kept unchanged.
 
 ### Model structure
 
@@ -123,15 +123,15 @@ Modeling changes in the premium $\Delta p_t = p_t - p_{t-1}$ produces a small po
 
 ### Memory timescale
 
-The fitted decay parameter implies a very short effective memory. With $\lambda \approx 0.68$ on weekly data, the half-life is:
+The selected decay parameter implies a very short fitted response timescale. With $\lambda \approx 0.68$ on weekly data, the half-life is:
 
 $$
 t_{1/2} = \frac{\ln(2)}{\lambda} \approx 1 \text{ week}
 $$
 
-This is consistent with short-horizon market dynamics rather than slow behavioral accumulation. In practice, the memory kernel is capturing recent market conditions rather than long-lived exposure effects.
+This is consistent with short-horizon market dynamics rather than slow behavioral accumulation. In practice, the memory kernel is best interpreted as an event-window response term rather than direct evidence of long-lived behavioral memory.
 
-This sharpens the main conclusion. A behavioral path-dependence mechanism would predict longer persistence. What is observed instead is rapid decay, no out-of-sample gain over the memoryless baseline, and a placebo distribution indistinguishable from the real result. The fitted structure does not merely fail to support path-dependence — it actively contradicts the timescale that path-dependence would require.
+This sharpens the main conclusion. A behavioral path-dependence mechanism would predict longer persistence. What is observed instead is rapid decay, no out-of-sample gain over the memoryless baseline, and a placebo distribution indistinguishable from the real result.
 
 ## Interpretation
 

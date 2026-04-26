@@ -4,12 +4,11 @@ USDT Demand Pressure in Turkey: A Path-Dependence Test
 ==============================================================================
 Author : Anne-Lise Saive - April 2026
 
-KEY METHODOLOGICAL PRINCIPLE 
-─────────────────────────────────────────────
+VALIDATION DESIGN
+─────────────────
 λ and ESS weights are tuned on the AUG 2018 shock (primary event).
 Performance is evaluated on the DEC 2021 shock (held-out event).
 These two events never touch each other.
-This eliminates the data snooping / partial leakage present in v5.
 
 THREE MODELS
 ────────────
@@ -20,15 +19,14 @@ B  Salience-weighted path-dependence
    Model A + M(t) + FX×M
    λ and ESS weights tuned on Aug 2018, evaluated on Dec 2021
 
-C  Reactivation asymmetry  [novel — exploratory]
+C  Reactivation asymmetry  [exploratory]
    Model B + Abruptness×M + Trends×M
    Ridge regression (CV alpha). Bootstrap CIs for novel terms.
-   Reported honestly: if OOS R² < B, flag as exploratory.
 
 DATA  (all public, no keys needed)
 ────────────────────────────────────
 Binance   USDT/TRY weekly klines
-FRED      USD/TRY weekly  (DEXTHUS)
+yfinance  USD/TRY daily, resampled weekly
 WorldBank Turkey CPI annual (used only to validate FX proxy)
 Google    Trends TR: USDT, Tether, dolar kripto
 ==============================================================================
@@ -40,6 +38,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import requests
+import yfinance as yf
+
 
 warnings.filterwarnings('ignore')
 
@@ -65,8 +65,6 @@ START, END   = '2018-01-01', '2024-12-31'
 TUNE_SHOCK   = pd.Timestamp('2018-08-13')   # tuning event   — Aug 2018
 EVAL_SHOCK   = pd.Timestamp('2021-12-20')   # main evaluation — Dec 2021
 ROBUST_SHOCK = pd.Timestamp('2023-06-15')   # robustness test  — Jun 2023
-IS_SYNTHETIC = False
-ABORT_ON_SYNTHETIC = True   # hard abort if any key source falls back
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -97,17 +95,50 @@ def fetch_binance(start=START):
     print(f"OK ({len(df)} weeks)")
     return df[['usdt_try_px', 'usdt_try_vol']]
 
-def fetch_fred():
-    print("  FRED USD/TRY …", end=' ', flush=True)
-    df = pd.read_csv(
-        "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXTHUS",
-        index_col=0, parse_dates=True, na_values='.')
-    df.columns = ['usd_try_official']
-    df = df.resample('W-MON').mean().ffill()
-    print(f"OK ({len(df)} weeks)")
-    return df
+def fetch_usd_try(start=START, end=END):
+    """
+    USD/TRY weekly close from yfinance (USDTRY=X). The yfinance
+    pair USDTRY=X gives daily continuous data going back to 2003,
+    resampled here to weekly Monday close to align with Binance klines.
+    """
+    print("  yfinance USD/TRY …", end=' ', flush=True)
 
-def fetch_worldbank():
+    raw = yf.download(
+        "USDTRY=X",
+        start=start,
+        end=end,
+        interval="1d",          # fetch daily, then resample for control
+        progress=False,
+        auto_adjust=False,
+    )
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+
+    if raw.empty or 'Close' not in raw.columns:
+        raise RuntimeError("yfinance returned empty or malformed USD/TRY data")
+
+    # Resample to weekly Monday close, matching Binance klines
+    weekly = raw['Close'].resample('W-MON').last().to_frame('usd_try_official')
+    weekly = weekly.dropna()
+
+    # Sanity assertions for the expected USD/TRY scale:
+    #   Jan 2018 ≈ 3.75    Aug 2018 ≈ 5.5–7    Dec 2021 ≈ 13–17
+    #   Jun 2023 ≈ 23–27   Dec 2024 ≈ 30–36
+    def _assert_range(start_str, end_str, lo, hi, label):
+        m = float(weekly['usd_try_official'].loc[start_str:end_str].median())
+        assert lo < m < hi, (
+            f"USD/TRY sanity check failed at {label}: "
+            f"expected {lo}-{hi}, got {m:.2f}."
+        )
+
+    _assert_range('2018-08', '2018-09',  4.0,  8.0,  'Aug 2018')
+    _assert_range('2021-12', '2022-01', 12.0, 18.0, 'Dec 2021')
+    _assert_range('2023-06', '2023-07', 22.0, 28.0, 'Jun 2023')
+
+    print(f"OK ({len(weekly)} weeks)")
+    return weekly
+
+def fetch_worldbank(start=START, end=END):
     """Annual CPI — used only for proxy validation, not as model input."""
     print("  World Bank CPI (validation only) …", end=' ', flush=True)
     url = ("https://api.worldbank.org/v2/country/TUR/indicator/"
@@ -124,12 +155,9 @@ def fetch_worldbank():
 
 def fetch_trends():
     """
-    Google Trends via direct HTTPS request — bypasses pytrends entirely.
-    This avoids the urllib3 >= 2.0 incompatibility that breaks pytrends
-    (Retry.__init__() unexpected keyword argument 'method_').
-
-    Falls back to pytrends if direct request fails, then to a fixed
-    neutral value (0.5) as last resort — with a clear warning.
+    Google Trends interest over time for the selected Turkish search terms.
+    A direct Trends request is attempted first; pytrends is used as a
+    secondary source when the direct endpoint is unavailable.
 
     Note: Trends data is normalised search interest (0-100), sample-based,
     not absolute volume. Used here as attention/cue proxy only.
@@ -138,8 +166,9 @@ def fetch_trends():
 
     terms   = ['USDT', 'Tether', 'dolar kripto']
     results = {}
+    direct_errors = {}
 
-    # ── Attempt 1: direct HTTP to unofficial Trends CSV endpoint ────────────
+    # Direct Trends request
     import csv, io, time as _time
     session = requests.Session()
     session.headers.update({
@@ -149,7 +178,6 @@ def fetch_trends():
         'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
     })
 
-    # Step 1: get consent cookie
     try:
         session.get('https://trends.google.com/', timeout=10)
     except Exception:
@@ -157,7 +185,6 @@ def fetch_trends():
 
     for term in terms:
         try:
-            # Step 2: fetch explore token
             explore_url = 'https://trends.google.com/trends/api/explore'
             explore_params = {
                 'hl': 'tr', 'tz': '-180', 'req': (
@@ -167,7 +194,6 @@ def fetch_trends():
                 )
             }
             r = session.get(explore_url, params=explore_params, timeout=12)
-            # Response starts with ")]}',\n" — strip it
             text  = r.text[5:] if r.text.startswith(")]}',") else r.text
             token = None
             import json as _json
@@ -179,7 +205,6 @@ def fetch_trends():
             if token is None:
                 raise ValueError("no token")
 
-            # Step 3: fetch CSV with token
             csv_url = 'https://trends.google.com/trends/api/widgetdata/multiline/csv'
             csv_params = {
                 'req': (f'{{"time":"{START} {END}","resolution":"WEEK",'
@@ -192,7 +217,6 @@ def fetch_trends():
             cr = session.get(csv_url, params=csv_params, timeout=12)
             reader = csv.reader(io.StringIO(cr.text))
             rows   = list(reader)
-            # Skip header rows — find the date column
             data_rows = [(r[0], r[1]) for r in rows
                          if len(r) >= 2 and r[0].startswith('20')]
             if not data_rows:
@@ -205,47 +229,22 @@ def fetch_trends():
 
         except Exception as e:
             results[term] = None
+            direct_errors[term] = str(e)
 
     successful = {k: v for k, v in results.items() if v is not None}
 
     if successful:
         gt = pd.DataFrame(successful)
         gt.index = pd.to_datetime(gt.index)
-        gt = gt.resample('W-MON').mean()
+        gt = gt.resample('W-MON').mean().ffill().bfill()
         gt['trends_composite'] = gt.mean(axis=1)
         print(f"OK via direct HTTP ({len(gt)} weeks, "
               f"{len(successful)}/{len(terms)} terms)")
         return gt[['trends_composite']]
 
-    # ── Attempt 2: pytrends with pinned Retry args ───────────────────────────
+    # pytrends request
+    pytrends_error = "not attempted"
     try:
-        from pytrends.request import TrendReq
-        import urllib3
-        # Build session without the broken 'method_' kwarg
-        retry = urllib3.Retry(total=3, backoff_factor=0.5)
-        pt = TrendReq(hl='tr-TR', tz=180, timeout=(15, 30), retries=retry)
-        pt.build_payload(terms, geo='TR',
-                         timeframe=f'{START} {END}')
-        gt = pt.interest_over_time()
-        if 'isPartial' in gt.columns:
-            gt = gt.drop(columns=['isPartial'])
-        gt.index = pd.to_datetime(gt.index)
-        gt = gt.resample('W-MON').mean()
-        gt['trends_composite'] = gt.mean(axis=1)
-        print(f"OK via pytrends ({len(gt)} weeks)")
-        return gt[['trends_composite']]
-    except Exception as e2:
-        pass
-
-    # ── Attempt 3: pip install compatible pytrends version ───────────────────
-    try:
-        import subprocess
-        subprocess.run(['pip', 'install', 'pytrends==4.9.2',
-                        'urllib3<2.0', '-q', '--break-system-packages'],
-                       check=True, capture_output=True)
-        from importlib import reload
-        import pytrends.request
-        reload(pytrends.request)
         from pytrends.request import TrendReq
         pt = TrendReq(hl='tr-TR', tz=180, timeout=(15, 30),
                       retries=3, backoff_factor=0.5)
@@ -255,95 +254,30 @@ def fetch_trends():
         if 'isPartial' in gt.columns:
             gt = gt.drop(columns=['isPartial'])
         gt.index = pd.to_datetime(gt.index)
-        gt = gt.resample('W-MON').mean()
+        gt = gt.resample('W-MON').mean().ffill().bfill()
         gt['trends_composite'] = gt.mean(axis=1)
-        print(f"OK via pytrends 4.9.2 ({len(gt)} weeks)")
+        print(f"OK via pytrends ({len(gt)} weeks)")
         return gt[['trends_composite']]
-    except Exception as e3:
-        raise RuntimeError(
-            f"All Trends fetch methods failed.\n"
-            f"  Direct HTTP : {results}\n"
-            f"  pytrends    : {e2}\n"
-            f"  pip+retry   : {e3}\n"
-            f"Fix: pip install 'urllib3<2' pytrends==4.9.2"
-        )
+    except Exception as e2:
+        pytrends_error = str(e2)
 
-def interp_anchors(anchors, dates):
-    a_d = pd.to_datetime(list(anchors.keys()))
-    a_v = np.array(list(anchors.values()), dtype=float)
-    return np.interp(dates.astype(np.int64), a_d.astype(np.int64), a_v)
-
-def synthetic_fallback(dates):
-    """
-    ═══════════════════════════════════════════════════════
-    PROTOTYPE ONLY — NOT EMPIRICAL EVIDENCE
-    Anchors are historically documented but data is synthetic.
-    Figures produced from this data are watermarked.
-    ═══════════════════════════════════════════════════════
-    """
-    global IS_SYNTHETIC
-    IS_SYNTHETIC = True
-    np.random.seed(42)
-    n = len(dates)
-
-    usd_try = interp_anchors({
-        '2018-01-01':3.80,'2018-08-13':7.00,'2018-09-13':6.20,
-        '2018-12-31':5.28,'2019-12-31':5.95,'2020-12-31':7.43,
-        '2021-09-01':8.80,'2021-12-20':18.36,'2021-12-31':13.32,
-        '2022-03-01':14.50,'2022-12-31':18.72,'2023-06-15':23.50,
-        '2023-12-31':29.51,'2024-12-31':34.20,
-    }, dates) + np.random.normal(0, 0.10, n)
-
-    # Premium spikes anchored conservatively
-    # (intentionally smaller than v5 to reduce circularity in synthetic test)
-    log_prem = interp_anchors({
-        '2018-01-01':0.001,'2018-08-13':0.035,'2018-09-13':0.012,
-        '2018-12-31':0.006,'2019-12-31':0.003,'2020-12-31':0.006,
-        '2021-09-01':0.008,'2021-12-20':0.030,'2021-12-31':0.014,
-        '2022-10-01':0.022,'2022-12-31':0.008,'2023-06-15':0.028,
-        '2023-12-31':0.010,'2024-12-31':0.007,
-    }, dates) + np.random.normal(0, 0.003, n)
-
-    gt = interp_anchors({
-        '2018-01-01':8,'2018-08-13':65,'2018-09-15':30,
-        '2018-12-31':13,'2019-12-31':11,'2020-12-31':17,
-        '2021-09-01':24,'2021-12-20':75,'2021-12-31':40,
-        '2022-10-01':50,'2022-12-31':26,'2023-06-15':58,
-        '2023-12-31':33,'2024-12-31':28,
-    }, dates)
-    gt = np.clip(gt + np.random.normal(0, 3, n), 0, 100)
-
-    cpi = interp_anchors({
-        '2018-01-01':10.3,'2018-08-01':17.9,'2018-10-01':25.2,
-        '2018-12-31':20.3,'2019-12-31':11.8,'2020-12-31':14.6,
-        '2021-12-01':21.3,'2022-03-01':61.1,'2022-10-01':85.5,
-        '2022-12-31':64.3,'2023-12-31':64.8,'2024-12-31':47.1,
-    }, dates)
-
-    return dict(
-        usd_try_official=usd_try,
-        usdt_try_px=usd_try * np.exp(log_prem),
-        usdt_try_vol=np.maximum(
-            interp_anchors({'2018-01-01':0.5,'2018-08-13':6.5,
-                '2018-12-31':1.3,'2019-12-31':1.0,'2020-12-31':2.6,
-                '2021-12-20':10.0,'2021-12-31':4.5,'2022-10-01':6.0,
-                '2023-06-15':7.8,'2024-12-31':5.5}, dates)
-            + np.abs(np.random.normal(0, 0.3, n)), 0.1),
-        cpi_yoy=cpi,
-        trends_composite=gt,
+    raise RuntimeError(
+        f"Google Trends fetch failed via all methods.\n"
+        f"  Direct HTTP : {direct_errors}\n"
+        f"  pytrends    : {pytrends_error}\n"
+        f"Check network access and the pytrends dependency."
     )
 
 def load_data():
-    global IS_SYNTHETIC
     dates = pd.date_range(START, END, freq='W-MON')
     df, failed = pd.DataFrame(index=dates), []
 
     print("\n── Fetching data ────────────────────────────────────────────")
     for name, fetcher, cols in [
-        ('Binance',    fetch_binance,    ['usdt_try_px','usdt_try_vol']),
-        ('FRED',       fetch_fred,       ['usd_try_official']),
-        ('WorldBank',  fetch_worldbank,  ['cpi_yoy']),
-        ('Trends',     fetch_trends,     ['trends_composite']),
+        ('Binance',   fetch_binance, ['usdt_try_px','usdt_try_vol']),
+        ('yfinance',  fetch_usd_try,  ['usd_try_official']),
+        ('WorldBank', fetch_worldbank, ['cpi_yoy']),
+        ('Trends',    fetch_trends, ['trends_composite']),
     ]:
         try:
             src = fetcher()
@@ -355,12 +289,13 @@ def load_data():
             failed.append(name)
 
     if failed:
-        critical_failed_now = [s for s in failed if s in ('Binance', 'FRED')]
-        syn = synthetic_fallback(dates) if critical_failed_now else None
-        if syn is None:
-            # Only non-critical failed — don't mark as synthetic
-            IS_SYNTHETIC = False
+        critical_failed_now = [s for s in failed if s in ('Binance', 'yfinance')]
+        if critical_failed_now:
+            print(f"\n  ABORT: Critical sources unavailable: {critical_failed_now}")
+            print("  Binance (USDT/TRY premium) and yfinance (USD/TRY) are required.")
+            raise SystemExit(1)
 
+        filled = []
         for col, key, is_critical in [
             ('usd_try_official', 'usd_try_official', True),
             ('usdt_try_px',      'usdt_try_px',      True),
@@ -369,39 +304,20 @@ def load_data():
             ('trends_composite', 'trends_composite',  False),
         ]:
             if col not in df.columns or df[col].isna().all():
-                if is_critical and syn is not None:
-                    df[col] = syn[key]
-                elif not is_critical:
-                    # Neutral fill: 0.5 for Trends (mid-range, uninformative)
-                    # cpi_yoy fallback: use 12w FX proxy built later in features
+                if not is_critical:
                     df[col] = 50.0 if col == 'trends_composite' else 0.0
-                    print(f"  Neutral fill for {col} — "
-                          f"{'Trends×M terms will be uninformative' if col=='trends_composite' else 'CPI proxy from FX will be used'}")
+                    filled.append(col)
 
     df = df.ffill().bfill()
     df = df[(df.index >= START) & (df.index <= END)]
 
-    # ── Abort logic ───────────────────────────────────────────────────────────
-    # Binance and FRED are critical — without them the primary dep. variable
-    # and shock series cannot be constructed from real data.
-    # World Bank CPI is validation-only, Trends is a cue proxy:
-    # both are useful but not fatal if absent.
-    critical_failed = [s for s in failed if s in ('Binance', 'FRED')]
-    if critical_failed and ABORT_ON_SYNTHETIC:
-        print(f"\n  ABORT: Critical sources unavailable: {critical_failed}")
-        print("  Binance (USDT/TRY premium) and FRED (USD/TRY) are required.")
-        print("  Set ABORT_ON_SYNTHETIC=False to run on synthetic data")
-        print("  (results will be watermarked and not publishable).")
-        raise SystemExit(1)
-
-    if failed and not critical_failed:
+    if failed:
         print(f"\n  NOTE: Non-critical sources unavailable: {failed}")
         print("  Proceeding with real data for critical sources.")
-        print("  Trends replaced with neutral 0.5 — cue-reactivation")
-        print("  terms in Model C will be uninformative.")
+        if filled:
+            print(f"  Neutral values used for: {filled}")
 
-    status = "⚠  SYNTHETIC PROTOTYPE" if IS_SYNTHETIC else "✓  REAL DATA"
-    print(f"\n  Status : {status}")
+    print(f"\n  Status : REAL DATA")
     print(f"  Rows   : {len(df)}  ({df.index[0].date()} → {df.index[-1].date()})")
     return df
 
@@ -427,7 +343,6 @@ def build_features(df):
     mu_cpi = df['cpi_proxy'].mean()
     sd_cpi = df['cpi_proxy'].std() + 1e-9
     df['cpi_proxy_norm'] = (df['cpi_proxy'] - mu_cpi) / sd_cpi
-
     # Realised abruptness from data (not hand-scored)
     df['fx_abruptness'] = (
         df['fx_ret_1w'].abs() /
@@ -445,11 +360,17 @@ def build_features(df):
     #   magnitude  → |fx_ret_4w| normalised
     #   abruptness → fx_abruptness normalised
     #   relevance  → cpi_proxy_norm (household inflation pressure)
-    fx_abs_norm  = (df['fx_ret_4w'].abs() /
-                    (df['fx_ret_4w'].abs().max() + 1e-9))
-    abr_norm     = df['fx_abruptness'] / (df['fx_abruptness'].max() + 1e-9)
-    rel_norm     = (df['cpi_proxy_norm'] - df['cpi_proxy_norm'].min()) / \
-                   (df['cpi_proxy_norm'].max() - df['cpi_proxy_norm'].min() + 1e-9)
+    # Expanding-window normalisation to avoid lookahead leakage.
+    # Each row normalises against the maximum observed up to and including
+    # that row, so values in early periods don't depend on future extremes.
+    fx_abs           = df['fx_ret_4w'].abs()
+    fx_abs_norm      = fx_abs / (fx_abs.expanding(min_periods=4).max() + 1e-9)
+    abr_norm         = (df['fx_abruptness']
+                        / (df['fx_abruptness'].expanding(min_periods=4).max() + 1e-9))
+    cpi_running_min  = df['cpi_proxy_norm'].expanding(min_periods=4).min()
+    cpi_running_max  = df['cpi_proxy_norm'].expanding(min_periods=4).max()
+    rel_norm         = ((df['cpi_proxy_norm'] - cpi_running_min)
+                        / (cpi_running_max - cpi_running_min + 1e-9))
     # Weights match ESS catalogue weights (w_mag=0.4, w_abr=0.3, w_rel=0.3)
     # giving a continuous weekly ESS-analogue scored the same way
     df['current_ess'] = 0.4 * fx_abs_norm + 0.3 * abr_norm + 0.3 * rel_norm
@@ -514,7 +435,7 @@ def compute_M(dates, shocks, lam, w_mag, w_abr, w_rel,
     includes Dec 2021's own ESS in M(t) once dw > 0 — so the model
     partly benefits from knowing the magnitude of the very shock it
     is trying to predict. This conflates contemporaneous shock signal
-    with prior memory. M_prior fixes this: during the Dec 2021 window,
+    with prior memory. With M_prior, during the Dec 2021 window,
     M(t) only reflects the 2018 primary shock (and any others before
     Dec 2021), giving a clean test of the claim:
       'Prior memory alone amplifies the response to a new shock.'
@@ -593,13 +514,37 @@ def fit_predict(X, y, mask_tr, mask_te, use_ridge=False, alpha=0.01):
     return yhat, r2_score(y, yhat, ok_tr), r2_score(y, yhat, ok_te), coef
 
 def compute_vif(X, names):
+    X = np.asarray(X, dtype=float)
     vifs = {}
     for i in range(X.shape[1]):
         xi = X[:, i]
         Xr = np.delete(X, i, axis=1)
-        c, *_ = np.linalg.lstsq(Xr, xi, rcond=None)
-        r2 = 1 - ((xi - Xr @ c)**2).sum() / ((xi - xi.mean())**2).sum()
-        vifs[names[i]] = 1 / (1 - r2 + 1e-10)
+        ok = np.isfinite(xi) & np.isfinite(Xr).all(axis=1)
+
+        if ok.sum() < 3 or np.std(xi[ok]) < 1e-12:
+            vifs[names[i]] = np.nan
+            continue
+
+        xi_ok = xi[ok]
+        Xr_ok = Xr[ok]
+        keep = np.std(Xr_ok, axis=0) >= 1e-12
+        Xr_ok = Xr_ok[:, keep]
+        if Xr_ok.shape[1] == 0:
+            vifs[names[i]] = np.nan
+            continue
+
+        # VIF is diagnostic only; standardise for numerical stability.
+        Xs = (Xr_ok - Xr_ok.mean(axis=0)) / (Xr_ok.std(axis=0) + 1e-12)
+        ys = (xi_ok - xi_ok.mean()) / (xi_ok.std() + 1e-12)
+        try:
+            c, *_ = np.linalg.lstsq(Xs, ys, rcond=None)
+            resid = ys - Xs @ c
+            ss_t = ((ys - ys.mean()) ** 2).sum()
+            r2 = 1 - (resid ** 2).sum() / (ss_t + 1e-12)
+            r2 = min(max(float(r2), 0.0), 1.0)
+            vifs[names[i]] = np.inf if r2 >= 1 - 1e-10 else 1 / (1 - r2)
+        except np.linalg.LinAlgError:
+            vifs[names[i]] = np.nan
     return vifs
 
 def true_bootstrap_ci(X, y, mask_tr, coef_fn, n_boot=500, seed=42):
@@ -689,8 +634,10 @@ def optimise(df, shocks, tune_shock=TUNE_SHOCK):
     log_lam, *lw = res.x
     lam = np.exp(log_lam)
     w   = np.exp(lw); w /= w.sum()
-    hl  = np.log(2) / lam / 52
-    print(f"  λ_opt    = {lam:.5f}  (half-life {hl:.2f} yr)")
+    hl_weeks = np.log(2) / lam
+    hl_years = hl_weeks / 52
+    print(f"  λ_opt    = {lam:.5f}  (half-life {hl_weeks:.2f} weeks = {hl_years:.3f} yr)")
+    print("  Note: λ is selected by event-window predictive performance.")
     print(f"  w_mag    = {w[0]:.3f}")
     print(f"  w_abr    = {w[1]:.3f}")
     print(f"  w_rel    = {w[2]:.3f}")
@@ -701,7 +648,7 @@ def optimise(df, shocks, tune_shock=TUNE_SHOCK):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 8.  LAMBDA SENSITIVITY  (ESS weights fixed at tuned values)
+# 8.  LAMBDA SENSITIVITY  (using tuned ESS weights)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def lambda_sensitivity(df, shocks, w_mag, w_abr, w_rel,
@@ -741,8 +688,8 @@ def run_models(df, shocks, lam, w_mag, w_abr, w_rel,
       B        Path-dependent  ← PRIMARY CLAIM
       C        Reactivation asymmetry ← EXPLORATORY ONLY, do not lead with
 
-    Tune event: TUNE_SHOCK (Dec 2021)
-    Eval event: EVAL_SHOCK (Jun 2023) — never touched in tuning.
+    Tune event: TUNE_SHOCK.
+    Eval event: eval_shock — never touched in tuning.
     M_prior excludes the eval shock's own ESS during the test window.
     """
     M_full  = compute_M(df.index, shocks, lam, w_mag, w_abr, w_rel)
@@ -801,7 +748,7 @@ def run_models(df, shocks, lam, w_mag, w_abr, w_rel,
         ])
         yB, r2B_tr, r2B_te, cB = fit_predict(XB, y, mt, me)
 
-        # ── Model C1 — original sensitisation [v8 baseline for comparison] ───
+        # ── Model C1 — general sensitisation ─────────────────────────────────
         # Abruptness×M + Trends×M.
         # Tests: does prior fear make ANY current signal hit harder?
         # This is general sensitisation, not specifically reactivation.
@@ -903,7 +850,7 @@ def run_models(df, shocks, lam, w_mag, w_abr, w_rel,
             yAt=yAt, r2At_tr=r2At_tr, r2At_te=r2At_te,
             yA=yA,   r2A_tr=r2A_tr,   r2A_te=r2A_te,
             yB=yB,   r2B_tr=r2B_tr,   r2B_te=r2B_te,
-            # C1 — original sensitisation (v8 baseline)
+            # C1 — general sensitisation
             yC1=yC1, r2C1_tr=r2C1_tr, r2C1_te=r2C1_te,
             cC1=cC1, c_names_C1=c_names_C1, vifs_C1=vifs_C1,
             ci_lo_C1=ci_lo_C1, ci_hi_C1=ci_hi_C1, alpha_C1=alpha_C1,
@@ -1072,21 +1019,14 @@ def make_figures(df, res_lev, shocks, lam, w_mag, w_abr, w_rel,
     dates = df.index
     M     = res_lev['M']
     ess   = compute_ESS(shocks, w_mag, w_abr, w_rel)
-    hl    = np.log(2) / lam / 52
+    hl_weeks = np.log(2) / lam
+    hl_years = hl_weeks / 52
 
     fig = plt.figure(figsize=(16, 17))
     gs  = gridspec.GridSpec(2, 2, figure=fig, hspace=0.52, wspace=0.36)
     ax1 = fig.add_subplot(gs[0, :])
     ax2 = fig.add_subplot(gs[1, 0])
     ax3 = fig.add_subplot(gs[1, 1])
-
-    # Watermark
-    for ax in [ax1, ax2, ax3]:
-        if IS_SYNTHETIC:
-            ax.text(0.5, 0.5, 'SYNTHETIC — NOT EMPIRICAL',
-                    transform=ax.transAxes, fontsize=15, color='red',
-                    alpha=0.15, ha='center', va='center',
-                    rotation=30, fontweight='bold', zorder=10)
 
     def vshock(ax, a1=0.13, a2=0.07):
         for _, s in shocks.iterrows():
@@ -1103,7 +1043,7 @@ def make_figures(df, res_lev, shocks, lam, w_mag, w_abr, w_rel,
     # ── Panel 1: USD/TRY + M(t) + premium ───────────────────────────────────
     ax1b = ax1.twinx()
     ax1.plot(dates, df['usd_try_official'],
-             color=C['fx'], lw=2, label='USD/TRY (FRED)', zorder=4)
+             color=C['fx'], lw=2, label='USD/TRY (yfinance)', zorder=4)
     ax1.fill_between(dates, df['usd_try_official'],
                      df['usd_try_official'].min(),
                      alpha=0.06, color=C['fx'])
@@ -1148,7 +1088,7 @@ def make_figures(df, res_lev, shocks, lam, w_mag, w_abr, w_rel,
     ax1.tick_params(axis='y', colors=C['fx'])
     ax1.set_title(
         f'Panel 1 — USD/TRY, USDT premium, and memory kernel M(t)\n'
-        f'λ={lam:.4f}  (half-life {hl:.1f} yr)  |  '
+        f'λ={lam:.4f}  (half-life {hl_weeks:.1f} weeks / {hl_years:.3f} yr)  |  '
         f'ESS weights: mag={w_mag:.2f}, abr={w_abr:.2f}, rel={w_rel:.2f}  |  '
         f'Blue dotted = tuning event, Green dotted = held-out eval event',
         fontsize=10, fontweight='bold'
@@ -1251,9 +1191,7 @@ def make_figures(df, res_lev, shocks, lam, w_mag, w_abr, w_rel,
             ax3b.tick_params(labelsize=7)
             ax3b.legend(fontsize=6, loc='upper left')
 
-    data_label = ("SYNTHETIC — PROTOTYPE ONLY"
-                  if IS_SYNTHETIC else
-                  "Data: Binance · FRED · World Bank · Google Trends")
+    data_label = "Data: Binance · yfinance · World Bank · Google Trends"
     fig.suptitle(
         f'USDT/TRY Premium Path-Dependence — Turkey 2018–2024\n'
         f'Tuned on {TUNE_SHOCK.date()} → Evaluated on {EVAL_SHOCK.date()}  |  '
@@ -1274,21 +1212,22 @@ def make_figures(df, res_lev, shocks, lam, w_mag, w_abr, w_rel,
 def print_results(results, lam, w_mag, w_abr, w_rel, shocks,
                   plac_BA, plac_C1B, plac_C2B, plac_C3B,
                   real_BA, real_C1B, real_C2B, real_C3B,
-                  eval_shock=None, title_suffix=""):
+                  eval_shock=None, section_label=""):
     if eval_shock is None:
         eval_shock = EVAL_SHOCK
     ess = compute_ESS(shocks, w_mag, w_abr, w_rel)
-    hl  = np.log(2) / lam / 52
+    hl_weeks = np.log(2) / lam
+    hl_years = hl_weeks / 52
 
     print(f"\n{'='*66}")
-    if title_suffix:
-        print(title_suffix)
+    if section_label:
+        print(section_label)
     print(f"FITTED ESS SCORES  (optimised on TUNE: {TUNE_SHOCK.date()})")
     print(f"{'='*66}")
     for i, (_, s) in enumerate(shocks.iterrows()):
         print(f"\n  {s['short']:6s}  ESS={ess.iloc[i]:.3f}  [{s['type']}]")
         print(f"    {s['description']}")
-    print(f"\n  λ = {lam:.5f}  →  half-life {hl:.1f} years")
+    print(f"\n  λ = {lam:.5f}  →  half-life {hl_weeks:.2f} weeks ({hl_years:.3f} years)")
 
     # ── Lead with PRIMARY spec (levels) ─────────────────────────────────────
     for spec, label, primary_note in [
@@ -1397,20 +1336,15 @@ def print_results(results, lam, w_mag, w_abr, w_rel, shocks,
                 print(f"    → Weak / not distinguishable from placebo")
 
     gap_months = (eval_shock - TUNE_SHOCK).days // 30
-    status     = "⚠  SYNTHETIC" if IS_SYNTHETIC else "✓  REAL DATA"
-    syn_warn   = ("WARNING: All results are from synthetic data.\n"
-                  "Run locally with real data to produce publishable output."
-                  if IS_SYNTHETIC else
-                  "Results are from real Binance / FRED / Trends data.")
     print(f"""
 {'='*66}
-HONEST SUMMARY  [{status}]
+SUMMARY  [REAL DATA]
 {'='*66}
 Parameter selection : {TUNE_SHOCK.date()} (TUNE event)
 Performance eval    : {eval_shock.date()} (EVAL event — never touched in tuning)
 Clean OOS evaluation. Events are {gap_months} months apart.
 
-{syn_warn}
+Results are from real Binance / yfinance / Trends data.
 
 PRIMARY CLAIM  : Model B — salience-weighted path-dependence.
 EXPLORATORY C1 : General sensitisation     — Abruptness×M + Trends×M
@@ -1435,7 +1369,7 @@ if __name__ == '__main__':
     from scipy.optimize import differential_evolution
 
     print("="*66)
-    print("STABLECOIN ADOPTION IS NOT MEMORYLESS — Turkey 2018–2024")
+    print("USDT/TRY DEMAND PRESSURE IN TURKEY: A PATH-DEPENDENCE TEST")
     print("Three C variants — C1 sensitisation · C2 threshold · C3 similarity")
     print(f"TUNE   event: {TUNE_SHOCK.date()}  (Aug 2018 lira crisis — primary encoding shock)")
     print(f"EVAL   event: {EVAL_SHOCK.date()}  (Dec 2021 rate shock — main held-out test)")
@@ -1484,4 +1418,4 @@ if __name__ == '__main__':
                   np.array([]), np.array([]), np.array([]), np.array([]),
                   np.nan, np.nan, np.nan, np.nan,
                   eval_shock=ROBUST_SHOCK,
-                  title_suffix="SECOND HELD-OUT ROBUSTNESS")
+                  section_label="SECOND HELD-OUT ROBUSTNESS")
