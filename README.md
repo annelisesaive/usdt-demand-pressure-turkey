@@ -32,7 +32,7 @@ included here (see `onchain_supplement.py`) is a first step in that direction.
 
 ## Motivation
 
-The hypothesis comes from computational models of salience-weighted memory. In these models, high-intensity past events reduce the threshold for reacting to related future cues. Formally, behavior depends not only on current input $x_t$, but on an accumulated memory term:
+The hypothesis comes from computational models of carrying salience effects. The idea is that salient past events are strongly remembered and reduce the threshold for reacting to future cues. Formally, behavior depends not only on current input $x_t$, but on an accumulated memory term:
 
 $$
 \text{response}_t = f(x_t, M(t))
@@ -43,11 +43,9 @@ where $M(t)$ summarizes prior exposure.
 Transposed to this setting, a severe currency shock could leave a trace that makes later shocks trigger stronger demand for stablecoin protection, even if they are smaller.
 
 Turkey provides a clean empirical setting, with three distinct and well-separated episodes:
-
 - **August 2018**  tariff shock and rapid currency collapse
 - **December 2021**  rate-cut driven crisis
 - **June 2023**  post-election devaluation
-
 These allow a simple tuning, evaluation, and robustness sequence without overlap.
 
 ## What is observed
@@ -76,6 +74,7 @@ directly to (1), at the cost of capturing a different slice of the same
 These cannot be cleanly separated using off-chain price data alone.
 
 The on-chain supplement (`onchain_supplement.py`) provides a complementary proxy: TRC-20 USDT gross and net flows involving Paribu- and BtcTurk-attributed wallets. This is closer to exchange-level stablecoin activity, but it still does **not** identify Turkish end-users and does not separate customer behavior from exchange treasury operations, wallet rebalancing, OTC flows, or operational hot-wallet management.
+
 # On-chain supplement
 
 The on-chain supplement uses a Dune query to aggregate weekly TRC-20 USDT flows involving Paribu- and BtcTurk-attributed wallets. It computes:
@@ -188,13 +187,8 @@ This sharpens the main conclusion. A behavioral path-dependence mechanism would 
 
 ## Interpretation
 
-The absence of a robust signal does not imply that path-dependence does not exist. It indicates that it is not identifiable in this data.
-
-The limitation is structural. The hypothesis concerns individual decision thresholds and behavioral adaptation over time. The observable variable is a market-level price proxy shaped by multiple layers of microstructure. Public data aggregates heterogeneous behavior into a single signal, which obscures the mechanism.
-
-## What would test the hypothesis properly
-
-A direct test would require wallet-level activity data, cohort segmentation, geographic resolution, and multiple countries and events. This would allow testing whether prior exposure changes adoption thresholds, timing, and persistence at the user level.
+The absence of a robust signal does not imply that path-dependence does not exist. The hypothesis is about how individual behavior shifts over time, which is not observable using an aggregated price index that flattens everyone into one number. 
+To test this hypothesis, this would need wallet-level data, user cohorts, and geographic resolution across multiple countries and events. This would allow testing whether prior exposure changes adoption thresholds, timing, and persistence at the user level.
 
 ## Reproducing
 
