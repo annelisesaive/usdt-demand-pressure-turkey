@@ -1,4 +1,4 @@
-# USDT Demand Pressure in Turkey: A Path-Dependence Test
+# Public Proxies for USDT Demand Pressure in Turkey: A Path-Dependence Test
 
 *Anne-Lise Saive (April 2026)*
 
@@ -10,12 +10,16 @@ The short answer is that, with public data, there is no robust evidence for this
 
 ## Scope
 
-This is a preliminary, single-country exploration. Turkey was chosen as a strong
-first candidate: three well-separated monetary shocks (2018, 2021, 2023), the
-world's largest USDT/TRY trading pair on Binance, and full public data
-availability for both market prices and on-chain flows. The aim is to test
-whether a salience-weighted memory mechanism leaves an identifiable trace in
-the most data-rich emerging-market case before extending the design.
+
+Turkey was chosen as a strong first candidate because it combines large local stablecoin activity, a liquid USDT/TRY market, and several well-separated monetary shock episodes.
+
+The main off-chain analysis covers three shock windows:
+
+- **August 2018** tariff shock and rapid currency collapse
+- **December 2021** rate-cut driven crisis
+- **June 2023** post-election devaluation
+
+The on-chain supplement is narrower. It uses TRC-20 USDT flows involving Turkey-domiciled CEX-attributed wallets from July 2019 onward. This means the on-chain supplement covers the 2021 and 2023 evaluation windows, but **not** the August 2018 tuning shock. The 2018 episode is therefore part of the off-chain premium model only.
 
 A full test of the hypothesis would extend to a cross-country panel
 (e.g. ARS, NGN, VES, RUB), use mechanical event detection rather than a
@@ -68,12 +72,25 @@ components:
 3. **The parallel-USD premium** accessible only via informal channels, which
    during severe lira stress can exceed 2–6% even for cash USD.
 
-These cannot be cleanly separated using off-chain price data alone. The
-on-chain supplement (`onchain_supplement.py`) provides a complementary signal
-TRC-20 USDT net inflow to Turkey-domiciled CEX hot wallets that speaks more
 directly to (1), at the cost of capturing a different slice of the same
-population (CEX users, not P2P or self-custody flows). A robust test would
-triangulate across all three measures.
+These cannot be cleanly separated using off-chain price data alone.
+
+The on-chain supplement (`onchain_supplement.py`) provides a complementary proxy: TRC-20 USDT gross and net flows involving Paribu- and BtcTurk-attributed wallets. This is closer to exchange-level stablecoin activity, but it still does **not** identify Turkish end-users and does not separate customer behavior from exchange treasury operations, wallet rebalancing, OTC flows, or operational hot-wallet management.
+# On-chain supplement
+
+The on-chain supplement uses a Dune query to aggregate weekly TRC-20 USDT flows involving Paribu- and BtcTurk-attributed wallets. It computes:
+
+- inflow USDT into the matched CEX wallet set
+- outflow USDT from the matched CEX wallet set
+- gross flow, defined as inflow plus outflow
+- net flow, defined as inflow minus outflow
+- absolute net share, defined as `abs(net_flow) / gross_flow`
+
+The supplement is descriptive. It checks whether the later shock windows coincide with stronger exchange-linked USDT flow regimes. It does not identify individual Turkish users, self-custody behavior, P2P activity, or causal demand.
+
+Because the on-chain data start in July 2019, the supplement covers December 2021 and June 2023 only. It does not cover August 2018.
+
+![On-chain supplement: TRC-20 USDT flows](figures/onchain_supplement.png)
 
 ## Data
 
@@ -194,12 +211,20 @@ python analysis.py
 
 The script fetches all data sources automatically and produces the main figure in `figures/`.
 
-For the on-chain supplement, run `dune_query.sql` on Dune, export the result
-to `data/onchain_flows.csv`, then run:
+
+For the on-chain supplement, run `dune_query.sql` on Dune. Then fetch the latest result through the Dune API:
 
 ```bash
+mkdir -p data
+curl -fSL \
+   -H "X-Dune-Api-Key: $DUNE_API_KEY" \
+   "https://api.dune.com/api/v1/query/7377063/results/csv?limit=1000" \
+   -o data/onchain_flows.csv
+
 python onchain_supplement.py
 ```
+
+The CSV is not committed to the repository. See `data/README.md` for data provenance and limitations.
 
 ## Files
 
@@ -211,5 +236,5 @@ python onchain_supplement.py
 
 ## Citation
 
-Saive, A.-L. (2026). *USDT Demand Pressure in Turkey: A Path-Dependence Test.*
+Saive, A.-L. (2026). *Public Proxies for USDT Demand Pressure in Turkey: A Path-Dependence Test.*
 [github.com/annelisesaive/usdt-demand-pressure-turkey](https://github.com/annelisesaive/usdt-demand-pressure-turkey)

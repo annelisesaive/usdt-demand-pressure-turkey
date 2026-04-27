@@ -59,11 +59,14 @@ def load_flows(path: str) -> pd.DataFrame:
     df['week'] = df['week'].dt.tz_localize(None)
     df = df.set_index('week').sort_index()
     df['net_flow_usdt_m'] = df['net_flow_usdt'] / 1e6
+
     if 'gross_flow_usdt' not in df.columns:
         df['gross_flow_usdt'] = df['inflow_usdt'] + df['outflow_usdt']
+
     if 'abs_net_share' not in df.columns:
         denom = df['gross_flow_usdt'].replace(0, np.nan)
         df['abs_net_share'] = df['net_flow_usdt'].abs() / denom
+
     df['inflow_usdt_m'] = df['inflow_usdt'] / 1e6
     df['outflow_usdt_m'] = df['outflow_usdt'] / 1e6
     df['gross_flow_usdt_m'] = df['gross_flow_usdt'] / 1e6
@@ -91,7 +94,7 @@ def plot_supplement(df: pd.DataFrame,
         flow = win['net_flow_usdt_m'].values
         rolling = pd.Series(flow).rolling(4, min_periods=1).mean().values
 
-         ax.bar(weeks_from_shock, flow, width=0.7, color=C['flow'],
+        ax.bar(weeks_from_shock, flow, width=0.7, color=C['flow'],
              alpha=0.55, edgecolor='none', label='Weekly net flow')
         ax.plot(weeks_from_shock, rolling, color=C['rolling'],
                 lw=2, label='4-week rolling mean')
@@ -113,6 +116,7 @@ def plot_supplement(df: pd.DataFrame,
     fig.suptitle(title, fontsize=11.5, fontweight='bold', y=1.02)
     fig.text(0.5, -0.04, 'Source: Dune | stablecoins_tron.transfers | cex.addresses',
              ha='center', fontsize=8, style='italic', color='#555')
+
     fig.text(
         0.5, -0.08,
         'Coverage starts July 2019; August 2018 shock is not covered by the on-chain supplement. '

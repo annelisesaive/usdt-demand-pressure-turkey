@@ -32,6 +32,7 @@ Thumbs.db
 # Project-specific
 data_cache/
 data/*.csv
+Query results.png
 !data/README.md
 *.parquet
 *.feather
