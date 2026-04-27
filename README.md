@@ -73,10 +73,6 @@ components:
 directly to (1), at the cost of capturing a different slice of the same
 These cannot be cleanly separated using off-chain price data alone.
 
-<<<<<<< Updated upstream
-The on-chain supplement (`onchain_supplement.py`) provides a complementary proxy: TRC-20 USDT gross and net flows involving Paribu- and BtcTurk-attributed wallets. This is closer to exchange-level stablecoin activity, but it still does **not** identify Turkish end-users and does not separate customer behavior from exchange treasury operations, wallet rebalancing, OTC flows, or operational hot-wallet management.
-
-=======
 The on-chain supplement (`onchain_supplement.py`) provides a complementary
 venue-level proxy: TRC-20 USDT gross and net flows involving Paribu- and
 BtcTurk-attributed wallets. It is useful as corroborating exchange-level
@@ -85,7 +81,7 @@ hypothesis. A single attributed hot wallet can aggregate activity from one
 large account or many users, and the data do not separate customer behavior
 from exchange treasury operations, wallet rebalancing, OTC flows, or
 operational hot-wallet management.
->>>>>>> Stashed changes
+
 # On-chain supplement
 
 The on-chain supplement uses a Dune query to aggregate weekly TRC-20 USDT flows involving Paribu- and BtcTurk-attributed wallets. It computes:
@@ -96,11 +92,8 @@ The on-chain supplement uses a Dune query to aggregate weekly TRC-20 USDT flows 
 - net flow, defined as inflow minus outflow
 - absolute net share, defined as `abs(net_flow) / gross_flow`
 
-The sign of CEX net flow is ambiguous. A positive inflow can reflect users
-sending USDT to the exchange to sell for TRY, or exchange-side wallet
-management to support TRY-to-USDT demand. Without a stablecoin/TRY pair-volume
-cross-check, the supplement should be read as flow amplitude at the venue
-level, not as directional adoption pressure.
+Note that the sign of CEX net flow can reflect users sending USDT to the exchange
+to sell for TRY, or exchange-side wallet management to support TRY-to-USDT demand.
 
 The supplement also runs a path-dependence check on the two covered event
 windows. It compares the absolute net-flow integral over the first nine
