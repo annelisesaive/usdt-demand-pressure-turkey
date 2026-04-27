@@ -4,9 +4,14 @@ On-chain Supplement: USDT Net Flow to Turkish Exchanges
 ==============================================================================
 Author : Anne-Lise Saive (April 2026)
 
-Plots weekly TRC-20 USDT net flow to Turkey-domiciled CEX wallets across the
-three event windows used in the main analysis. Source data is exported from
-dune_query.sql to data/onchain_flows.csv.
+Plots weekly TRC-20 USDT net flow to Turkey-domiciled CEX-attributed wallets
+across the event windows used in the on-chain supplement. Source data is
+exported from dune_query.sql to data/onchain_flows.csv.
+
+The supplement is a venue-level proxy. It does not identify wallet cohorts or
+individual Turkish users, and the sign of CEX net flow is ambiguous. For this
+reason, the path-dependence check compares absolute net-flow response
+magnitudes rather than interpreting inflow as mechanically bullish or bearish.
 ==============================================================================
 """
 
@@ -45,6 +50,7 @@ SHOCKS = [
 
 PRE_WEEKS = 8
 POST_WEEKS = 16
+TEST_HORIZON_WEEKS = 8
 DATA_PATH = 'data/onchain_flows.csv'
 
 
@@ -73,7 +79,69 @@ def load_flows(path: str) -> pd.DataFrame:
     return df
 
 
+def post_shock_abs_flow(df: pd.DataFrame, shock_date: str,
+                        horizon_weeks: int = TEST_HORIZON_WEEKS) -> pd.Series:
+    shock = pd.Timestamp(shock_date)
+    expected = horizon_weeks + 1
+    window = df.loc[df.index >= shock, 'net_flow_usdt'].abs().head(expected) / 1e6
+    if len(window) < expected:
+        raise ValueError(
+            f"Need {expected} weekly observations on or after {shock.date()}, "
+            f"found {len(window)}"
+        )
+    return window.iloc[:expected].reset_index(drop=True)
+
+
+def path_dependence_test(df: pd.DataFrame,
+                         horizon_weeks: int = TEST_HORIZON_WEEKS,
+                         n_boot: int = 10000,
+                         seed: int = 42) -> dict:
+    dec = post_shock_abs_flow(df, '2021-12-20', horizon_weeks)
+    jun = post_shock_abs_flow(df, '2023-06-15', horizon_weeks)
+    paired_diff = jun.to_numpy() - dec.to_numpy()
+
+    observed = float(paired_diff.sum())
+    dec_integral = float(dec.sum())
+    jun_integral = float(jun.sum())
+
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(paired_diff), size=(n_boot, len(paired_diff)))
+    boot = paired_diff[idx].sum(axis=1)
+    ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5])
+
+    signs = np.array(np.meshgrid(*[[-1, 1]] * len(paired_diff))).T.reshape(-1, len(paired_diff))
+    perm = (signs * paired_diff).sum(axis=1)
+    p_one_sided = float(np.mean(perm >= observed))
+    p_two_sided = float(np.mean(np.abs(perm) >= abs(observed)))
+
+    return {
+        'horizon_weeks': horizon_weeks,
+        'dec_integral_m': dec_integral,
+        'jun_integral_m': jun_integral,
+        'diff_m': observed,
+        'ci_lo_m': float(ci_lo),
+        'ci_hi_m': float(ci_hi),
+        'p_one_sided': p_one_sided,
+        'p_two_sided': p_two_sided,
+        'n_weeks': len(paired_diff),
+    }
+
+
+def print_test_result(result: dict) -> None:
+    print("\n── On-chain path-dependence check ───────────────────────────")
+    print("  Scope     : venue-level CEX wallet flow proxy")
+    print(f"  Metric    : sum |net_flow_usdt| over first {result['n_weeks']} post-shock weeks")
+    print(f"  Dec 2021  : {result['dec_integral_m']:.2f}M USDT")
+    print(f"  Jun 2023  : {result['jun_integral_m']:.2f}M USDT")
+    print(f"  Jun-Dec   : {result['diff_m']:+.2f}M USDT")
+    print(f"  Bootstrap : 95% CI [{result['ci_lo_m']:+.2f}, {result['ci_hi_m']:+.2f}]M")
+    print(f"  Perm test : one-sided p={result['p_one_sided']:.3f}, "
+          f"two-sided p={result['p_two_sided']:.3f}")
+    print("  Note      : sign is ambiguous, so the test uses response magnitude.")
+
+
 def plot_supplement(df: pd.DataFrame,
+                    test_result: dict | None = None,
                     outpath: str = 'figures/onchain_supplement.png') -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
 
@@ -119,8 +187,20 @@ def plot_supplement(df: pd.DataFrame,
 
     fig.text(
         0.5, -0.08,
+        (f'Path-dependence check: |net flow| first {test_result["n_weeks"]} post-shock weeks, '
+         f'Jun-Dec={test_result["diff_m"]:+.1f}M USDT, '
+         f'95% CI [{test_result["ci_lo_m"]:+.1f}, {test_result["ci_hi_m"]:+.1f}], '
+         f'one-sided p={test_result["p_one_sided"]:.3f}'
+         if test_result else
+         'Path-dependence check unavailable for this export.'),
+        ha='center',
+        fontsize=8,
+        color='#555'
+    )
+    fig.text(
+        0.5, -0.12,
         'Coverage starts July 2019; August 2018 shock is not covered by the on-chain supplement. '
-        'Flows are exchange-address proxies, not user-level Turkish demand.',
+        'Venue-level flow proxy; sign is ambiguous and not user-level demand.',
         ha='center',
         fontsize=8,
         color='#555'
@@ -146,7 +226,9 @@ def main() -> None:
         )
 
     df = load_flows(args.csv)
-    plot_supplement(df, args.out)
+    test_result = path_dependence_test(df)
+    print_test_result(test_result)
+    plot_supplement(df, test_result, args.out)
 
 
 if __name__ == '__main__':

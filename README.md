@@ -73,8 +73,19 @@ components:
 directly to (1), at the cost of capturing a different slice of the same
 These cannot be cleanly separated using off-chain price data alone.
 
+<<<<<<< Updated upstream
 The on-chain supplement (`onchain_supplement.py`) provides a complementary proxy: TRC-20 USDT gross and net flows involving Paribu- and BtcTurk-attributed wallets. This is closer to exchange-level stablecoin activity, but it still does **not** identify Turkish end-users and does not separate customer behavior from exchange treasury operations, wallet rebalancing, OTC flows, or operational hot-wallet management.
 
+=======
+The on-chain supplement (`onchain_supplement.py`) provides a complementary
+venue-level proxy: TRC-20 USDT gross and net flows involving Paribu- and
+BtcTurk-attributed wallets. It is useful as corroborating exchange-level
+evidence, but it is not a direct wallet-cohort test of the behavioral
+hypothesis. A single attributed hot wallet can aggregate activity from one
+large account or many users, and the data do not separate customer behavior
+from exchange treasury operations, wallet rebalancing, OTC flows, or
+operational hot-wallet management.
+>>>>>>> Stashed changes
 # On-chain supplement
 
 The on-chain supplement uses a Dune query to aggregate weekly TRC-20 USDT flows involving Paribu- and BtcTurk-attributed wallets. It computes:
@@ -85,7 +96,21 @@ The on-chain supplement uses a Dune query to aggregate weekly TRC-20 USDT flows 
 - net flow, defined as inflow minus outflow
 - absolute net share, defined as `abs(net_flow) / gross_flow`
 
-The supplement is descriptive. It checks whether the later shock windows coincide with stronger exchange-linked USDT flow regimes. It does not identify individual Turkish users, self-custody behavior, P2P activity, or causal demand.
+The sign of CEX net flow is ambiguous. A positive inflow can reflect users
+sending USDT to the exchange to sell for TRY, or exchange-side wallet
+management to support TRY-to-USDT demand. Without a stablecoin/TRY pair-volume
+cross-check, the supplement should be read as flow amplitude at the venue
+level, not as directional adoption pressure.
+
+The supplement also runs a path-dependence check on the two covered event
+windows. It compares the absolute net-flow integral over the first nine
+post-shock weekly buckets for December 2021 and June 2023, then reports a
+bootstrap confidence interval and a paired sign-flip permutation p-value for
+the Jun-minus-Dec difference.
+
+The supplement does not identify individual Turkish users, self-custody
+behavior, P2P activity, or causal demand. It is corroborating evidence at the
+venue level, not a direct test of the user-level path-dependence mechanism.
 
 Because the on-chain data start in July 2019, the supplement covers December 2021 and June 2023 only. It does not cover August 2018.
 
