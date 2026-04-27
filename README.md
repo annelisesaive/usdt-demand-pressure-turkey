@@ -32,15 +32,13 @@ included here (see `onchain_supplement.py`) is a first step in that direction.
 
 ## Motivation
 
-The hypothesis comes from computational models of carrying salience effects. The idea is that salient past events are strongly remembered and reduce the threshold for reacting to future cues. Formally, behavior depends not only on current input $x_t$, but on an accumulated memory term:
+The hypothesis comes from computational models of carrying salience effects. The idea is that severe currency shocks could be strongly remembered and reduce the threshold for stablecoin adoption in the future. Adoption would depend on current input $x_t$ and on an accumulated memory term:
 
 $$
 \text{response}_t = f(x_t, M(t))
 $$
 
 where $M(t)$ summarizes prior exposure.
-
-Transposed to this setting, a severe currency shock could leave a trace that makes later shocks trigger stronger demand for stablecoin protection, even if they are smaller.
 
 Turkey provides a clean empirical setting, with three distinct and well-separated episodes:
 - **August 2018**  tariff shock and rapid currency collapse
