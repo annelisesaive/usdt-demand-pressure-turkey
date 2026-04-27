@@ -40,7 +40,3 @@ Query results.png
 # Local environment overrides
 .env.local
 secrets.json
-
-# Generated outputs
-figures/*.png
-!figures/main_results.png
