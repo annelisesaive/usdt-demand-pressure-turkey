@@ -137,8 +137,6 @@ def print_test_result(result: dict) -> None:
     print(f"  Bootstrap : 95% CI [{result['ci_lo_m']:+.2f}, {result['ci_hi_m']:+.2f}]M")
     print(f"  Perm test : one-sided p={result['p_one_sided']:.3f}, "
           f"two-sided p={result['p_two_sided']:.3f}")
-    print("  Note      : sign is ambiguous, so the test uses response magnitude.")
-
 
 def plot_supplement(df: pd.DataFrame,
                     test_result: dict | None = None,
@@ -200,7 +198,7 @@ def plot_supplement(df: pd.DataFrame,
     fig.text(
         0.5, -0.12,
         'Coverage starts July 2019; August 2018 shock is not covered by the on-chain supplement. '
-        'Venue-level flow proxy; sign is ambiguous and not user-level demand.',
+        'Venue-level flow proxy; sign is ambiguous as it does not reflect user-level demand.',
         ha='center',
         fontsize=8,
         color='#555'
